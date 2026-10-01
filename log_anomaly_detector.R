@@ -5,7 +5,7 @@
 #              to isolate network intrusion anomalies across cyclical trends.
 # ==============================================================================
 
-# 1. ENVIRONMENT INITIALIZATION (Fixed base R logic to prevent map_lgl crash)
+# 1. ENVIRONMENT INITIALIZATION
 r_pkgs <- c("tidyverse", "tsibble", "fable", "distributional")
 for (pkg in r_pkgs) {
   if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
@@ -54,7 +54,8 @@ execute_anomaly_detection <- function(data) {
     summarise(
       inbound_connections = sum(inbound_connections_per_min),
       contains_crit_flag = any(syslog_status == "CRIT-500"),
-      targeted_device = first(device_id)
+      targeted_device = first(device_id),
+      .groups = "drop"
     ) %>%
     as_tsibble(index = time_bucket)
   
@@ -62,28 +63,35 @@ execute_anomaly_detection <- function(data) {
   fit <- ts_data %>%
     model(ets_model = ETS(inbound_connections))
   
-  # Extract fitted values and compute dynamic 99% Upper Prediction Boundaries
+  # Extract fitted values and compute residuals safely
   modeled_residuals <- augment(fit)
   
+  # Calculate dynamic 99% Upper Prediction Boundaries (Fixed operator error)
+  historical_mean <- mean(ts_data$inbound_connections, na.rm = TRUE)
+  historical_sd <- sd(modeled_residuals$.innov, na.rm = TRUE)
+  upper_control_limit <- historical_mean + (2.576 * historical_sd)
+  
   analyzed_telemetry <- modeled_residuals %>%
+    as_tibble() %>%
     mutate(
-      fitted_mean = .fitted,
-      dynamic_ucl = .fitted + (2.576 * sd(.innov, na.rm = TRUE)),
+      dynamic_ucl = upper_control_limit,
       is_anomaly = inbound_connections > dynamic_ucl,
       operational_alert_level = case_when(
-        is_anomaly & contains_crit_flag ~ "EMERGENCY: ADAPTIVE ML THREAT DETECTION",
+        is_anomaly & ts_data$contains_crit_flag ~ "EMERGENCY: ADAPTIVE ML THREAT DETECTION",
         is_anomaly ~ "WARNING: TREND OUTLIER DETECTED",
         TRUE ~ "STATUS-NORMAL"
       ),
       targeted_device = ts_data$targeted_device
     )
   
-  return(analyzed_telemetry)
+  return(list(processed_data = analyzed_telemetry, ucl = upper_control_limit))
 }
 
 # 4. EXECUTION RUNTIME & PIPELINE VERIFICATION
 raw_network_data <- generate_syslog_telemetry(days = 7)
-analyzed_results <- execute_anomaly_detection(raw_network_data)
+detection_results <- execute_anomaly_detection(raw_network_data)
+
+analyzed_results <- detection_results$processed_data
 
 isolated_threats <- analyzed_results %>% 
   filter(is_anomaly == TRUE)
@@ -91,7 +99,7 @@ isolated_threats <- analyzed_results %>%
 # 5. CLOSED-LOOP ACTIVE DEFENSE MITIGATION & DATA EXPORT
 if (nrow(isolated_threats) > 0) {
   cat("[*] Threat anomalies verified. Generating logs and adaptive visualization mappings...\n")
-  write_csv(as_tibble(isolated_threats), "isolated_threats_report.csv")
+  write_csv(isolated_threats, "isolated_threats_report.csv")
   
   # ACTIVE DEFENSE ENGINE: Generate a synthetic dynamic firewall drop matrix script
   synthetic_attacker_ips <- c("192.168.42.11", "10.0.4.89", "172.16.22.4", "192.168.88.21")
@@ -115,7 +123,7 @@ if (nrow(isolated_threats) > 0) {
   
   # Build metadata summary metrics text file for Discord consumption
   critical_metric <- max(isolated_threats$inbound_connections)
-  target_device <- isolated_threats$targeted_device
+  target_device <- first(isolated_threats$targeted_device)
   
   summary_lines <- c(
     paste0("ALERT_STATUS=CRITICAL"),
@@ -127,7 +135,7 @@ if (nrow(isolated_threats) > 0) {
   # Structural implementation of Dashboard Dark UI Aesthetics
   threat_plot <- ggplot(analyzed_results, aes(x = time_bucket, y = inbound_connections)) +
     geom_line(color = "#3a4f66", alpha = 0.6, linewidth = 0.5) +
-    geom_line(aes(y = dynamic_ucl), color = "#ff4d4d", linetype = "dashed", linewidth = 0.8) +
+    geom_hline(yintercept = detection_results$ucl, color = "#ff4d4d", linetype = "dashed", linewidth = 0.8) +
     geom_point(data = isolated_threats, aes(color = operational_alert_level), size = 3.5, shape = 18) +
     scale_color_manual(values = c("EMERGENCY: ADAPTIVE ML THREAT DETECTION" = "#e74c3c", 
                                   "WARNING: TREND OUTLIER DETECTED" = "#f39c12")) +
