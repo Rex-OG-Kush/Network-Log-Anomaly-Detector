@@ -19,10 +19,13 @@ jobs:
       with:
         use-public-rspm: true 
 
-    # Explicitly install the exact packages needed before running the code
-    - name: Resolve Data Science Dependencies
-      run: |
-        R -e "install.packages(c('tidyverse', 'jsonlite'), repos='https://r-project.org')"
+    # Optimized: Automatically cache dependencies to speed up subsequent runs
+    - name: Setup R Dependencies Cache
+      uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        packages: |
+          tidyverse
+          jsonlite
 
     - name: Execute Live 3-Sigma Anomaly Mapping Engine
       run: Rscript log_anomaly_detectorV2.R
