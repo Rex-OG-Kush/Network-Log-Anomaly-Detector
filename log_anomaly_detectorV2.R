@@ -6,7 +6,7 @@
 # ==============================================================================
 
 # 1. ENVIRONMENT INITIALIZATION
-if (!require("tidyverse")) install.packages("tidyverse", repos = "http://r-project.org")
+if (!require("tidyverse")) install.packages("tidyverse", repos = "https://r-project.org")
 library(tidyverse)
 library(stats)
 
