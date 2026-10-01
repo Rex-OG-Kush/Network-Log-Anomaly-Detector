@@ -6,7 +6,7 @@
 # ==============================================================================
 
 # 1. ENVIRONMENT INITIALIZATION
-r_pkgs <- c("tidyverse", "tsibble", "fable", "distributional")
+r_pkgs <- c("tidyverse", "tsibble", "fable", "distributional", "lubridate")
 for (pkg in r_pkgs) {
   if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
     install.packages(pkg, repos = "https://r-project.org")
@@ -23,12 +23,10 @@ generate_syslog_telemetry <- function(days = 7) {
   total_intervals <- days * 24 * 60 
   timeline <- seq(from = Sys.time() - (days * 86400), length.out = total_intervals, by = "1 min")
   
-  # Inject daily cyclical pattern (higher traffic mid-day, lower at night)
   hour_vectors <- as.numeric(format(timeline, "%H"))
   diurnal_lambda <- 45 + 25 * sin((hour_vectors - 6) * pi / 12)
   base_traffic <- rpois(total_intervals, lambda = diurnal_lambda) 
   
-  # Inject threat anomalies (DDoS & Low-and-Slow probing escalations)
   anomaly_indices <- c(2500, 4320, 7100, 9500)
   base_traffic[anomaly_indices] <- base_traffic[anomaly_indices] + c(450, 620, 890, 510)
   
@@ -47,41 +45,41 @@ generate_syslog_telemetry <- function(days = 7) {
 execute_anomaly_detection <- function(data) {
   cat("[*] Transforming tracking data to Tsibble and fitting ETS model arrays...\n")
   
-  # Aggregate raw 1-minute data into 15-minute buckets for computational efficiency
+  # Structural key mapping update: Included device_id as an explicit tsibble structural key
   ts_data <- data %>%
     mutate(time_bucket = floor_date(timestamp, "15 mins")) %>%
-    group_by(time_bucket) %>%
+    group_by(time_bucket, device_id) %>%
     summarise(
       inbound_connections = sum(inbound_connections_per_min),
       contains_crit_flag = any(syslog_status == "CRIT-500"),
-      targeted_device = first(device_id),
       .groups = "drop"
     ) %>%
-    as_tsibble(index = time_bucket)
+    as_tsibble(index = time_bucket, key = device_id)
   
   # Fit an automated Error, Trend, Seasonal (ETS) state-space model framework
   fit <- ts_data %>%
     model(ets_model = ETS(inbound_connections))
   
-  # Extract fitted values and compute residuals safely
+  # Extract fitted metrics safely flattening vectors
   modeled_residuals <- augment(fit)
   
-  # Calculate dynamic 99% Upper Prediction Boundaries (Fixed operator error)
+  # Unified calculation framework avoiding variable size mismatch errors
   historical_mean <- mean(ts_data$inbound_connections, na.rm = TRUE)
-  historical_sd <- sd(modeled_residuals$.innov, na.rm = TRUE)
+  historical_sd   <- sd(modeled_residuals$.innov, na.rm = TRUE)
   upper_control_limit <- historical_mean + (2.576 * historical_sd)
   
   analyzed_telemetry <- modeled_residuals %>%
+    left_join(as_tibble(ts_data) %>% select(time_bucket, device_id, contains_crit_flag), 
+              by = c("time_bucket", "device_id")) %>%
     as_tibble() %>%
     mutate(
       dynamic_ucl = upper_control_limit,
       is_anomaly = inbound_connections > dynamic_ucl,
       operational_alert_level = case_when(
-        is_anomaly & ts_data$contains_crit_flag ~ "EMERGENCY: ADAPTIVE ML THREAT DETECTION",
+        is_anomaly & contains_crit_flag ~ "EMERGENCY: ADAPTIVE ML THREAT DETECTION",
         is_anomaly ~ "WARNING: TREND OUTLIER DETECTED",
         TRUE ~ "STATUS-NORMAL"
-      ),
-      targeted_device = ts_data$targeted_device
+      )
     )
   
   return(list(processed_data = analyzed_telemetry, ucl = upper_control_limit))
@@ -90,7 +88,6 @@ execute_anomaly_detection <- function(data) {
 # 4. EXECUTION RUNTIME & PIPELINE VERIFICATION
 raw_network_data <- generate_syslog_telemetry(days = 7)
 detection_results <- execute_anomaly_detection(raw_network_data)
-
 analyzed_results <- detection_results$processed_data
 
 isolated_threats <- analyzed_results %>% 
@@ -101,7 +98,6 @@ if (nrow(isolated_threats) > 0) {
   cat("[*] Threat anomalies verified. Generating logs and adaptive visualization mappings...\n")
   write_csv(isolated_threats, "isolated_threats_report.csv")
   
-  # ACTIVE DEFENSE ENGINE: Generate a synthetic dynamic firewall drop matrix script
   synthetic_attacker_ips <- c("192.168.42.11", "10.0.4.89", "172.16.22.4", "192.168.88.21")
   
   bash_script_lines <- c(
@@ -121,9 +117,8 @@ if (nrow(isolated_threats) > 0) {
   writeLines(bash_script_lines, "blocklist_manifest.sh")
   cat("[+] Automated mitigation firewall asset created: blocklist_manifest.sh\n")
   
-  # Build metadata summary metrics text file for Discord consumption
   critical_metric <- max(isolated_threats$inbound_connections)
-  target_device <- first(isolated_threats$targeted_device)
+  target_device <- first(isolated_threats$device_id)
   
   summary_lines <- c(
     paste0("ALERT_STATUS=CRITICAL"),
@@ -133,7 +128,7 @@ if (nrow(isolated_threats) > 0) {
   writeLines(summary_lines, "threat_summary.env")
   
   # Structural implementation of Dashboard Dark UI Aesthetics
-  threat_plot <- ggplot(analyzed_results, aes(x = time_bucket, y = inbound_connections)) +
+  threat_plot <- ggplot(analyzed_results, aes(x = time_bucket, y = inbound_connections, group = device_id)) +
     geom_line(color = "#3a4f66", alpha = 0.6, linewidth = 0.5) +
     geom_hline(yintercept = detection_results$ucl, color = "#ff4d4d", linetype = "dashed", linewidth = 0.8) +
     geom_point(data = isolated_threats, aes(color = operational_alert_level), size = 3.5, shape = 18) +
