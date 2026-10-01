@@ -86,10 +86,28 @@ isolated_threats <- detection_results$processed_data %>%
 cat("\n[!] ANALYSIS COMPLETE: ISOLATED ENTERPRISE THREAT LOG OBJECTS:\n")
 print(isolated_threats %>% select(timestamp, device_id, inbound_connections_per_min, syslog_status, operational_alert_level))
 
-# 5. EXPORT ANOMALY ARTIFACTS FOR STORAGE
+# 5. EXPORT ANOMALY ARTIFACTS AND VISUAL CHARTS
 if (nrow(isolated_threats) > 0) {
-  cat("[*] Threats found! Exporting isolated incident report...\n")
+  cat("[*] Threats found! Exporting isolated incident report & chart...\n")
   write_csv(isolated_threats, "isolated_threats_report.csv")
+  
+  # Generate High-Resolution Diagnostic Plot
+  threat_plot <- ggplot(detection_results$processed_data, aes(x = timestamp, y = inbound_connections_per_min)) +
+    geom_line(color = "#2c3e50", alpha = 0.6) +
+    geom_hline(yintercept = detection_results$ucl, linetype = "dashed", color = "#e74c3c", linewidth = 1) +
+    geom_point(data = isolated_threats, aes(color = operational_alert_level), size = 3) +
+    scale_color_manual(values = c("EMERGENCY: SYSTEMIC ATTACK DETECTED" = "#c0392b", 
+                                  "WARNING: UNUSUAL TRAFFIC VOLUME SPIKE" = "#d35400")) +
+    labs(title = "Enterprise Network Telemetry Threat Analysis",
+         subtitle = "3-Sigma Statistical Control Limit Anomalies",
+         x = "Timeline", y = "Inbound Connections / Min",
+         color = "Alert Classification") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+
+  # Save chart as image asset
+  ggsave("network_threat_analysis.png", plot = threat_plot, width = 10, height = 6, dpi = 300)
+  
 } else {
   cat("[-] No systemic threats isolated. Creating placeholder log...\n")
   write_csv(tibble(status="No anomalies detected"), "isolated_threats_report.csv")
