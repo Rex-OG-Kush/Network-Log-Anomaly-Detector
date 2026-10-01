@@ -24,17 +24,51 @@ jobs:
       with:
         packages: |
           tidyverse
-          jsonlite
+          tsibble
+          fable
+          distributional
 
-    - name: Execute Live 3-Sigma Anomaly Mapping Engine
+    - name: Execute Live Adaptive ML Anomaly Mapping Engine
       run: Rscript log_anomaly_detector.R
+
+    - name: Parse Analytics Metadata and Broadcast Discord Alert
+      if: success()
+      env:
+        WEBHOOK_URL: \${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        if [ -f threat_summary.env ]; then
+          source threat_summary.env
+          if [ "\$ALERT_STATUS" = "CRITICAL" ]; then
+            echo "[!] Security threat breach isolated. Dispensing payload vector to Discord..."
+            curl -H "Content-Type: application/json" \
+                 -X POST \
+                 -d '{
+                       "username": "SIEM Core Security Engine",
+                       "avatar_url": "https://githubassets.com",
+                       "embeds": [{
+                         "title": "🚨 CRITICAL ARCHITECTURE EXTRUSION THREAT ISOLATED",
+                         "description": "Adaptive time-series threshold modeling arrays have broken statistical containment lines.",
+                         "color": 15158332,
+                         "fields": [
+                           { "name": "Target Node Vector ID", "value": "'"\$TARGET_NODE"'", "inline": true },
+                           { "name": "Peak Spike Connection Volume", "value": "'"\$METRIC_PEAK"' req/15min", "inline": true },
+                           { "name": "Mitigation Strategy", "value": "Mitigation script `blocklist_manifest.sh` generated successfully.", "inline": false }
+                         ],
+                         "footer": { "text": "Continuous Security Monitoring Engine Run Instance" }
+                       }]
+                     }' \$WEBHOOK_URL
+          else
+            echo "[-] Telemetry baseline normal. Skipping security alert channel broadcast."
+          fi
+        fi
 
     - name: Upload Security Anomaly Report Artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: network-threat-report-${{ github.run_id }}
+        name: network-threat-report-\${{ github.run_id }}
         path: |
           isolated_threats_report.csv
           network_threat_analysis.png
+          blocklist_manifest.sh
         retention-days: 14
