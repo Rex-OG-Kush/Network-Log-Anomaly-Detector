@@ -29,11 +29,12 @@ jobs:
     - name: Execute Live 3-Sigma Anomaly Mapping Engine
       run: Rscript log_anomaly_detector.R
 
-    # NEW: Securely packages and saves your extracted threats
-    - name: Upload Security Anomaly Report Artifact
-      if: always() # Ensures logs are saved even if an unexpected processing error occurs
+    - name: Upload Security Anomaly Report Artifacts
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: network-threat-report-${{ github.run_id }}
-        path: isolated_threats_report.csv
-        retention-days: 14 # Stores the files for 2 weeks before automated cleanup
+        path: |
+          isolated_threats_report.csv
+          network_threat_analysis.png
+        retention-days: 14
