@@ -1,28 +1,32 @@
 # ==============================================================================
-# Title: Enterprise Syslog Network Anomaly Detector via 3-Sigma Thresholding
+# Title: Enterprise Syslog Network Anomaly Detector via Adaptive ML (ETS)
 # Author: Matutuzela Jabulani Ndlovu (Rex-OG-Kush)
-# Description: Engineering pipeline utilizing HarvardX statistical models 
-#              to ingest, parse, and isolate network intrusion spikes (DDoS/Scans).
+# Description: Adaptive ML pipeline utilizing time-series state-space modeling
+#              to isolate network intrusion anomalies across cyclical trends.
 # ==============================================================================
 
 # 1. ENVIRONMENT INITIALIZATION
-if (!require("tidyverse")) install.packages("tidyverse", repos = "https://r-project.org")
-library(tidyverse)
-library(stats)
+r_pkgs <- c("tidyverse", "tsibble", "fable", "distributional")
+if (any(!map_lgl(r_pkgs, require, character.only = TRUE))) {
+  install.packages(r_pkgs, repos = "https://r-project.org")
+  walk(r_pkgs, library, character.only = TRUE)
+}
 
-set.seed(930925) # Reproducibility anchor utilizing profile parameters
+set.seed(930925)
 
-# 2. SYNTHETIC ENTERPRISE SYSLOG GENERATOR
+# 2. SYNTHETIC ENTERPRISE SYSLOG GENERATOR WITH DIURNAL CYCLES
 generate_syslog_telemetry <- function(days = 7) {
-  cat("[*] Generating baseline enterprise network telemetry infrastructure...\n")
+  cat("[*] Generating baseline enterprise network telemetry with cyclical variations...\n")
   
-  total_intervals <- days * 24 * 60 # 1-minute tracking increments
+  total_intervals <- days * 24 * 60 
   timeline <- seq(from = Sys.time() - (days * 86400), length.out = total_intervals, by = "1 min")
   
-  # Construct a standard Poisson baseline for normal background packet connections
-  base_traffic <- rpois(total_intervals, lambda = 45) 
+  # Inject daily cyclical pattern (higher traffic mid-day, lower at night)
+  hour_vectors <- as.numeric(format(timeline, "%H"))
+  diurnal_lambda <- 45 + 25 * sin((hour_vectors - 6) * pi / 12)
+  base_traffic <- rpois(total_intervals, lambda = diurnal_lambda) 
   
-  # Inject structural anomaly spikes (Simulating multi-vector DDoS / Port Scan traffic)
+  # Inject threat anomalies (DDoS & Low-and-Slow probing escalations)
   anomaly_indices <- c(2500, 4320, 7100, 9500)
   base_traffic[anomaly_indices] <- base_traffic[anomaly_indices] + c(450, 620, 890, 510)
   
@@ -33,78 +37,76 @@ generate_syslog_telemetry <- function(days = 7) {
     syslog_status = sample(c("INFO-200", "NOTICE-205", "WARN-401"), total_intervals, replace = TRUE, prob = c(0.92, 0.06, 0.02))
   )
   
-  # Alter status flags precisely at anomalous spike intervals to match systemic signatures
   telemetry_dataframe$syslog_status[anomaly_indices] <- "CRIT-500" 
-  
   return(telemetry_dataframe)
 }
 
-# 3. STATISTICAL ANOMALY PIPELINE (3-SIGMA RULES)
+# 3. ADAPTIVE MACHINE LEARNING PIPELINE (ETS MODELLING)
 execute_anomaly_detection <- function(data) {
-  cat("[*] Executing diagnostic wrangling and mathematical thresholding calculations...\n")
+  cat("[*] Transforming tracking data to Tsibble and fitting ETS model arrays...\n")
   
-  # Establish robust telemetry metrics across the baseline dataset
-  traffic_metrics <- data %>% 
+  # Aggregate raw 1-minute data into 15-minute buckets for computational efficiency
+  ts_data <- data %>%
+    mutate(time_bucket = floor_date(timestamp, "15 mins")) %>%
+    group_by(time_bucket) %>%
     summarise(
-      mu = mean(inbound_connections_per_min),
-      sigma = sd(inbound_connections_per_min)
-    )
+      inbound_connections = sum(inbound_connections_per_min),
+      contains_crit_flag = any(syslog_status == "CRIT-500")
+    ) %>%
+    as_tsibble(index = time_bucket)
   
-  historical_mean <- traffic_metrics$mu
-  historical_sd <- traffic_metrics$sigma
+  # Fit an automated Error, Trend, Seasonal (ETS) state-space model framework
+  fit <- ts_data %>%
+    model(ets_model = ETS(inbound_connections))
   
-  # Apply 3-Sigma limits: Outliers falling beyond 3 standard deviations from the statistical mean
-  upper_control_limit <- historical_mean + (3 * historical_sd)
-  lower_control_limit := max(0, historical_mean - (3 * historical_sd))
+  # Extract fitted values and compute dynamic 99% Upper Prediction Boundaries
+  modeled_residuals <- augment(fit)
   
-  cat(sprintf("[-] Baseline Statistical Evaluation - Mean: %.2f | StdDev: %.2f\n", historical_mean, historical_sd))
-  cat(sprintf("[-] Upper Alert Boundary Constraint set at: %.2f metrics/min\n", upper_control_limit))
+  # Dynamically calculate confidence margins based on the model variance distributions
+  sigma_intervals <- response_frequencies(fit)
   
-  # Isolate and transform data structure to flag critical operational spikes
-  analyzed_telemetry <- data %>%
+  analyzed_telemetry <- modeled_residuals %>%
     mutate(
-      z_score = (inbound_connections_per_min - historical_mean) / historical_sd,
-      is_anomaly = inbound_connections_per_min > upper_control_limit,
+      fitted_mean = .fitted,
+      # 99% dynamic upper limit = fitted value + 2.576 * standard deviation of residuals
+      dynamic_ucl = .fitted + (2.576 * sd(.innov, na.rm = TRUE)),
+      is_anomaly = inbound_connections > dynamic_ucl,
       operational_alert_level = case_when(
-        is_anomaly & syslog_status == "CRIT-500" ~ "EMERGENCY: SYSTEMIC ATTACK DETECTED",
-        is_anomaly ~ "WARNING: UNUSUAL TRAFFIC VOLUME SPIKE",
+        is_anomaly & contains_crit_flag ~ "EMERGENCY: ADAPTIVE ML THREAT DETECTION",
+        is_anomaly ~ "WARNING: TREND OUTLIER DETECTED",
         TRUE ~ "STATUS-NORMAL"
       )
     )
   
-  return(list(processed_data = analyzed_telemetry, ucl = upper_control_limit))
+  return(analyzed_telemetry)
 }
 
 # 4. EXECUTION RUNTIME & PIPELINE VERIFICATION
 raw_network_data <- generate_syslog_telemetry(days = 7)
-detection_results <- execute_anomaly_detection(raw_network_data)
+analyzed_results <- execute_anomaly_detection(raw_network_data)
 
-# Extract identified network incidents
-isolated_threats <- detection_results$processed_data %>% 
+isolated_threats <- analyzed_results %>% 
   filter(is_anomaly == TRUE)
 
-cat("\n[!] ANALYSIS COMPLETE: ISOLATED ENTERPRISE THREAT LOG OBJECTS:\n")
-print(isolated_threats %>% select(timestamp, device_id, inbound_connections_per_min, syslog_status, operational_alert_level))
+cat("\n[!] ML ANALYSIS COMPLETE: ISOLATED ADAPTIVE THREAT LOG OBJECTS:\n")
+print(isolated_threats %>% as_tibble() %>% select(time_bucket, inbound_connections, dynamic_ucl, operational_alert_level))
 
 # 5. DATA EXPORT AND DARK UI VISUALIZATION THEME GENERATION
 if (nrow(isolated_threats) > 0) {
-  cat("[*] Threat anomalies verified. Generating logs and visualization mappings...\n")
-  write_csv(isolated_threats, "isolated_threats_report.csv")
+  cat("[*] Threat anomalies verified. Generating logs and adaptive visualization mappings...\n")
+  write_csv(as_tibble(isolated_threats), "isolated_threats_report.csv")
   
-  # Structural implementation of Dashboard Dark UI Aesthetics
-  threat_plot <- ggplot(detection_results$processed_data, aes(x = timestamp, y = inbound_connections_per_min)) +
-    geom_line(color = "#3a4f66", alpha = 0.5, linewidth = 0.5) +
-    geom_hline(yintercept = detection_results$ucl, linetype = "dashed", color = "#ff4d4d", linewidth = 0.8) +
+  threat_plot <- ggplot(analyzed_results, aes(x = time_bucket, y = inbound_connections)) +
+    geom_line(color = "#3a4f66", alpha = 0.6, linewidth = 0.5) +
+    geom_line(aes(y = dynamic_ucl), color = "#ff4d4d", linetype = "dashed", linewidth = 0.8) +
     geom_point(data = isolated_threats, aes(color = operational_alert_level), size = 3.5, shape = 18) +
-    annotate("text", x = min(detection_results$processed_data$timestamp), y = detection_results$ucl * 1.05, 
-             label = "3-Sigma Upper Control Boundary", color = "#ff4d4d", hjust = 0, size = 3) +
-    scale_color_manual(values = c("EMERGENCY: SYSTEMIC ATTACK DETECTED" = "#e74c3c", 
-                                  "WARNING: UNUSUAL TRAFFIC VOLUME SPIKE" = "#f39c12")) +
+    scale_color_manual(values = c("EMERGENCY: ADAPTIVE ML THREAT DETECTION" = "#e74c3c", 
+                                  "WARNING: TREND OUTLIER DETECTED" = "#f39c12")) +
     labs(
-      title = "SIEM INFRASTRUCTURE TELEMETRY METRICS ANOMALY MAP",
-      subtitle = "Real-Time 3-Sigma Deviation Network Log Audit Pipeline",
+      title = "SIEM ENTERPRISE TELEMETRY ADAPTIVE ML MAP",
+      subtitle = "Dynamic Exponential Smoothing (ETS) Time-Series Control Array",
       x = "Chronological Tracking Framework Log Timeline",
-      y = "Total Metrics Connection Volumes / Min",
+      y = "Aggregated Connection Volumes (15 Min Buckets)",
       color = "System Core Incident Categorization"
     ) +
     theme_minimal(base_family = "sans") +
@@ -126,13 +128,6 @@ if (nrow(isolated_threats) > 0) {
   ggsave("network_threat_analysis.png", plot = threat_plot, width = 11, height = 6.5, dpi = 300)
   
 } else {
-  cat("[-] Complete dataset operations nominal. Generating standard confirmation logs...\n")
+  cat("[-] Complete dataset operations nominal.\n")
   write_csv(tibble(status="System Nominal - Zero Boundary Control Deviations Found"), "isolated_threats_report.csv")
-  
-  # Fallback visualization rendering empty detection data models smoothly
-  blank_plot <- ggplot() + 
-    theme_void() + 
-    theme(plot.background = element_rect(fill = "#0f172a", color = NA)) +
-    annotate("text", x = 1, y = 1, label = "Zero Threat Anomalies Isolated Across Current Telemetry Phase.", color = "#38bdf8")
-  ggsave("network_threat_analysis.png", plot = blank_plot, width = 11, height = 6.5, dpi = 300)
 }
