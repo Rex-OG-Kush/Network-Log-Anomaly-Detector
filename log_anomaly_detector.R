@@ -55,7 +55,7 @@ execute_anomaly_detection <- function(data) {
   
   # Apply 3-Sigma limits: Outliers falling beyond 3 standard deviations from the statistical mean
   upper_control_limit <- historical_mean + (3 * historical_sd)
-  lower_control_limit <- max(0, historical_mean - (3 * historical_sd))
+  lower_control_limit := max(0, historical_mean - (3 * historical_sd))
   
   cat(sprintf("[-] Baseline Statistical Evaluation - Mean: %.2f | StdDev: %.2f\n", historical_mean, historical_sd))
   cat(sprintf("[-] Upper Alert Boundary Constraint set at: %.2f metrics/min\n", upper_control_limit))
@@ -86,29 +86,53 @@ isolated_threats <- detection_results$processed_data %>%
 cat("\n[!] ANALYSIS COMPLETE: ISOLATED ENTERPRISE THREAT LOG OBJECTS:\n")
 print(isolated_threats %>% select(timestamp, device_id, inbound_connections_per_min, syslog_status, operational_alert_level))
 
-# 5. EXPORT ANOMALY ARTIFACTS AND VISUAL CHARTS
+# 5. DATA EXPORT AND DARK UI VISUALIZATION THEME GENERATION
 if (nrow(isolated_threats) > 0) {
-  cat("[*] Threats found! Exporting isolated incident report & chart...\n")
+  cat("[*] Threat anomalies verified. Generating logs and visualization mappings...\n")
   write_csv(isolated_threats, "isolated_threats_report.csv")
   
-  # Generate High-Resolution Diagnostic Plot
+  # Structural implementation of Dashboard Dark UI Aesthetics
   threat_plot <- ggplot(detection_results$processed_data, aes(x = timestamp, y = inbound_connections_per_min)) +
-    geom_line(color = "#2c3e50", alpha = 0.6) +
-    geom_hline(yintercept = detection_results$ucl, linetype = "dashed", color = "#e74c3c", linewidth = 1) +
-    geom_point(data = isolated_threats, aes(color = operational_alert_level), size = 3) +
-    scale_color_manual(values = c("EMERGENCY: SYSTEMIC ATTACK DETECTED" = "#c0392b", 
-                                  "WARNING: UNUSUAL TRAFFIC VOLUME SPIKE" = "#d35400")) +
-    labs(title = "Enterprise Network Telemetry Threat Analysis",
-         subtitle = "3-Sigma Statistical Control Limit Anomalies",
-         x = "Timeline", y = "Inbound Connections / Min",
-         color = "Alert Classification") +
-    theme_minimal() +
-    theme(legend.position = "bottom")
+    geom_line(color = "#3a4f66", alpha = 0.5, linewidth = 0.5) +
+    geom_hline(yintercept = detection_results$ucl, linetype = "dashed", color = "#ff4d4d", linewidth = 0.8) +
+    geom_point(data = isolated_threats, aes(color = operational_alert_level), size = 3.5, shape = 18) +
+    annotate("text", x = min(detection_results$processed_data$timestamp), y = detection_results$ucl * 1.05, 
+             label = "3-Sigma Upper Control Boundary", color = "#ff4d4d", hjust = 0, size = 3) +
+    scale_color_manual(values = c("EMERGENCY: SYSTEMIC ATTACK DETECTED" = "#e74c3c", 
+                                  "WARNING: UNUSUAL TRAFFIC VOLUME SPIKE" = "#f39c12")) +
+    labs(
+      title = "SIEM INFRASTRUCTURE TELEMETRY METRICS ANOMALY MAP",
+      subtitle = "Real-Time 3-Sigma Deviation Network Log Audit Pipeline",
+      x = "Chronological Tracking Framework Log Timeline",
+      y = "Total Metrics Connection Volumes / Min",
+      color = "System Core Incident Categorization"
+    ) +
+    theme_minimal(base_family = "sans") +
+    theme(
+      plot.background = element_rect(fill = "#0f172a", color = NA),
+      panel.background = element_rect(fill = "#0f172a", color = NA),
+      panel.grid.major = element_line(color = "#1e293b", linewidth = 0.5),
+      panel.grid.minor = element_blank(),
+      text = element_text(color = "#94a3b8"),
+      plot.title = element_text(color = "#f8fafc", face = "bold", size = 14),
+      plot.subtitle = element_text(color = "#38bdf8", size = 10, margin = margin(b = 15)),
+      axis.text = element_text(color = "#64748b"),
+      legend.position = "bottom",
+      legend.background = element_rect(fill = "#1e293b", color = NA),
+      legend.text = element_text(color = "#e2e8f0"),
+      legend.key = element_blank()
+    )
 
-  # Save chart as image asset
-  ggsave("network_threat_analysis.png", plot = threat_plot, width = 10, height = 6, dpi = 300)
+  ggsave("network_threat_analysis.png", plot = threat_plot, width = 11, height = 6.5, dpi = 300)
   
 } else {
-  cat("[-] No systemic threats isolated. Creating placeholder log...\n")
-  write_csv(tibble(status="No anomalies detected"), "isolated_threats_report.csv")
+  cat("[-] Complete dataset operations nominal. Generating standard confirmation logs...\n")
+  write_csv(tibble(status="System Nominal - Zero Boundary Control Deviations Found"), "isolated_threats_report.csv")
+  
+  # Fallback visualization rendering empty detection data models smoothly
+  blank_plot <- ggplot() + 
+    theme_void() + 
+    theme(plot.background = element_rect(fill = "#0f172a", color = NA)) +
+    annotate("text", x = 1, y = 1, label = "Zero Threat Anomalies Isolated Across Current Telemetry Phase.", color = "#38bdf8")
+  ggsave("network_threat_analysis.png", plot = blank_plot, width = 11, height = 6.5, dpi = 300)
 }
