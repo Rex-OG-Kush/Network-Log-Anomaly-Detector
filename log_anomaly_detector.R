@@ -5,11 +5,13 @@
 #              to isolate network intrusion anomalies across cyclical trends.
 # ==============================================================================
 
-# 1. ENVIRONMENT INITIALIZATION
+# 1. ENVIRONMENT INITIALIZATION (Fixed base R logic to prevent map_lgl crash)
 r_pkgs <- c("tidyverse", "tsibble", "fable", "distributional")
-if (any(!map_lgl(r_pkgs, require, character.only = TRUE))) {
-  install.packages(r_pkgs, repos = "https://r-project.org")
-  walk(r_pkgs, library, character.only = TRUE)
+for (pkg in r_pkgs) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "https://r-project.org")
+    library(pkg, character.only = TRUE)
+  }
 }
 
 set.seed(930925)
@@ -92,7 +94,6 @@ if (nrow(isolated_threats) > 0) {
   write_csv(as_tibble(isolated_threats), "isolated_threats_report.csv")
   
   # ACTIVE DEFENSE ENGINE: Generate a synthetic dynamic firewall drop matrix script
-  # In production, these IPs would be extracted directly from your parsed raw logs.
   synthetic_attacker_ips <- c("192.168.42.11", "10.0.4.89", "172.16.22.4", "192.168.88.21")
   
   bash_script_lines <- c(
@@ -114,7 +115,7 @@ if (nrow(isolated_threats) > 0) {
   
   # Build metadata summary metrics text file for Discord consumption
   critical_metric <- max(isolated_threats$inbound_connections)
-  target_device <- isolated_threats$targeted_device[1]
+  target_device <- isolated_threats$targeted_device
   
   summary_lines <- c(
     paste0("ALERT_STATUS=CRITICAL"),
