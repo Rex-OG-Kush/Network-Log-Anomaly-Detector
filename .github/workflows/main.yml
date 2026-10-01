@@ -2,7 +2,6 @@ name: Continuous Security Log Scan Loop
 
 on:
   schedule:
-    # Triggers the security scanning engine automatically every 12 hours
     - cron: '0 */12 * * *'
   push:
     branches: [ main ]
@@ -16,7 +15,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Initialize Enterprise R Runtime Environment
-      uses: actions/setup-r@v2
+      uses: r-lib/actions/setup-r@v2
       with:
         use-public-rspm: true 
 
