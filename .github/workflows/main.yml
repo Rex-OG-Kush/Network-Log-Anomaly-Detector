@@ -19,7 +19,6 @@ jobs:
       with:
         use-public-rspm: true 
 
-    # Optimized: Automatically cache dependencies to speed up subsequent runs
     - name: Setup R Dependencies Cache
       uses: r-lib/actions/setup-r-dependencies@v2
       with:
@@ -28,4 +27,13 @@ jobs:
           jsonlite
 
     - name: Execute Live 3-Sigma Anomaly Mapping Engine
-      run: Rscript log_anomaly_detectorV2.R
+      run: Rscript log_anomaly_detector.R
+
+    # NEW: Securely packages and saves your extracted threats
+    - name: Upload Security Anomaly Report Artifact
+      if: always() # Ensures logs are saved even if an unexpected processing error occurs
+      uses: actions/upload-artifact@v4
+      with:
+        name: network-threat-report-${{ github.run_id }}
+        path: isolated_threats_report.csv
+        retention-days: 14 # Stores the files for 2 weeks before automated cleanup
