@@ -85,3 +85,12 @@ isolated_threats <- detection_results$processed_data %>%
 
 cat("\n[!] ANALYSIS COMPLETE: ISOLATED ENTERPRISE THREAT LOG OBJECTS:\n")
 print(isolated_threats %>% select(timestamp, device_id, inbound_connections_per_min, syslog_status, operational_alert_level))
+
+# 5. EXPORT ANOMALY ARTIFACTS FOR STORAGE
+if (nrow(isolated_threats) > 0) {
+  cat("[*] Threats found! Exporting isolated incident report...\n")
+  write_csv(isolated_threats, "isolated_threats_report.csv")
+} else {
+  cat("[-] No systemic threats isolated. Creating placeholder log...\n")
+  write_csv(tibble(status="No anomalies detected"), "isolated_threats_report.csv")
+}
