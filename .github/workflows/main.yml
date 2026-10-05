@@ -31,11 +31,9 @@ jobs:
     - name: Execute Live Adaptive ML Anomaly Mapping Engine
       run: Rscript log_anomaly_detector.R
 
-# Fixes the un-evaluated webhook string leak bug
     - name: Parse Analytics Metadata and Broadcast Discord Alert
       if: success()
       env:
-        # Corrected: Removed the backslash escape character to pass the parameter successfully
         WEBHOOK_URL: \${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
         if [ -f threat_summary.env ]; then
@@ -58,7 +56,7 @@ jobs:
                          ],
                          "footer": { "text": "Continuous Security Monitoring Engine Run Instance" }
                        }]
-                     }' \$WEBHOOK_URL
+                     }' "\$WEBHOOK_URL"
           else
             echo "[-] Telemetry baseline normal. Skipping security alert channel broadcast."
           fi
